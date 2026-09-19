@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import Base, engine, get_db
 from app.models import User
+from app.services.audit import log_document_access
 from app.services.permissions import get_accessible_documents
 
 
@@ -52,7 +53,7 @@ def user_documents(
         user=user,
     )
 
-    return {
+    response = {
         "user": {
             "id": user.id,
             "name": user.name,
@@ -68,6 +69,15 @@ def user_documents(
             for document in documents
         ],
     }
+
+    try:
+        log_document_access(db, user.id, [document.id for document in documents])
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return response
 
 
 if __name__ == "__main__":
