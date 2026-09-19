@@ -1,7 +1,7 @@
-from sqlalchemy import or_, select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.models import Document, DocumentPermission, User
+from app.models import Document, User
 
 
 def get_accessible_documents(
@@ -9,20 +9,24 @@ def get_accessible_documents(
     user: User,
 ) -> list[Document]:
 
-    statement = (
-        select(Document)
-        .join(
-            DocumentPermission,
-            DocumentPermission.document_id == Document.id,
-        )
-        .where(
-            or_(
-                DocumentPermission.user_id == user.id,
-                DocumentPermission.allowed_role == user.role,
-                DocumentPermission.allowed_department == user.department,
-            )
-        )
-        .distinct()
+    query = text(
+        """
+        SELECT DISTINCT d.*
+        FROM documents AS d
+        JOIN document_permissions AS p ON p.document_id = d.id
+        WHERE p.user_id = :user_id
+           OR p.allowed_role = :user_role
+           OR p.allowed_department = :user_department
+        """
     )
 
-    return list(db.scalars(statement).all())
+    parameters = {
+        "user_id": user.id,
+        # The database enum stores names (e.g. MANAGER), not values (manager).
+        "user_role": user.role.name,
+        "user_department": user.department,
+    }
+
+    # Map the SQL results to Document objects for the existing API.
+    statement = select(Document).from_statement(query)
+    return list(db.scalars(statement, parameters).all())
